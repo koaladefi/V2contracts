@@ -139,6 +139,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
     // Events
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
+    event BurnLyptus(address indexed user,address indexed target, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmissionRateUpdated(address indexed caller, uint256 previousAmount, uint256 newAmount);
@@ -342,8 +343,10 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
             uint256 amountMulByPrice = _amount.mul(pool.lpPriceMA7);
             lyptusAmount = ((amountMulByPrice.mul(lyptusFee).div(10000)).mul(1e18)).div(lyptusPriceMA7);
+            lyptusAmount = lyptusAmount.div(1e18);
             
-            // The fee payed in LYPTUS is burned
+            emit BurnLyptus(msg.sender,BURN_ADDRESS, lyptusAmount);
+            
             lyptus.transferFrom(msg.sender,BURN_ADDRESS,lyptusAmount);
             dynamicDepositFee = _amount.mul(remainningFeeBP).div(10000);
         }    
