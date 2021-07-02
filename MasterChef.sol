@@ -67,8 +67,9 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 lastRewardBlock;  // Last block number that NALISs distribution occurs.
         uint256 accNalisPerShare;   // Accumulated NALISs per share, times 1e12. See below.
         uint16 depositFeeBP;      // Deposit fee in basis points
-        uint16 dynamicDepositFeeBP;      // Dynamic deposit fee in basis points
+        uint256 dynamicDepositFeeBP;      // Dynamic deposit fee in basis points
         uint256 lpPriceMA7;     // LP or token price based on moving avarage price from last 7 days / Regulary updated by the operator
+        uint256 totalBuybackBurnDepFee; // Store the total amount of buyback and burn dep fee in the pool since the last reset
         uint256 harvestInterval;  // Harvest interval in seconds
         uint256 withdrawalFeeInterval; // Withdrawal fee minimum interval in seconds
         uint256 withdrawalFeeBP; // Withdrawal fee in basis points when the withdrawal occurs before the minimum interval
@@ -80,8 +81,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
     IBEP20 public lyptus;
     // Lyptus price based on moving avarage price from last 7 days / Regulary updated by the operator
     uint256 public lyptusPriceMA7=0;
-    
-
     
     // Dev address.
     address public devAddress;
@@ -110,14 +109,13 @@ contract MasterChef is Ownable, ReentrancyGuard {
     // Charity fee is a part of deposit fee (in basis point)
     uint16 public charityFeeBP;
     // Charity fee is a part of deposit fee (in basis point)
-    uint16 public lyptuDiscountFeeBP;    
+    uint16 public lyptusDiscountFeeBP;    
     // Locker interface
     ILocker nalisLocker;
     // Locker adresse
     address public nalisLockerAddress;
     // Locker rate (in basis point) if = 0 locker desactivated
     uint16 public lockerRate;
-    
 
     // Info of each pool.
     PoolInfo[] public poolInfo;
@@ -135,8 +133,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
     // Referral commission rate in basis points.
     uint16 public referralCommissionRate = 100;
     
-    // The operator can only update the lyptusPriceMA7 + lpPriceMA7 & change operator adresse
-    address private _operator;    
+    // The operator can only update the lyptusPriceMA7 + lpPriceMA7 & reset totaldynamicdepfee & change operator adresse
+    address private _operator;  
 
     // Events
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
@@ -159,10 +157,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
     event LotteryMintRateUpdated(address indexed user, uint256 previousAmount, uint16 newAmount);
     event LyptusPriceMA7Updated(address indexed user, uint256 previousAmount, uint256 newAmount);
     event LpPriceMA7Updated(address indexed user, uint256 previousAmount, uint256 newAmount);
+    event TotalBuybackBurnDepFeeReseted(address indexed user, uint256 previousAmount, uint256 newAmount);
     
-    
-
-
     // Modifiers
     modifier onlyOperator() {
         require(_operator == msg.sender, "operator: caller is not the operator");
@@ -185,7 +181,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         lotteryAddress = BURN_ADDRESS;
         lotteryMintRate = 0;
         charityFeeBP = 1000;
-        lyptuDiscountFeeBP = 5000;
+        lyptusDiscountFeeBP = 5000;
         lockerRate = 5000;
 
         devAddress = msg.sender;
@@ -207,7 +203,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
     }    
 
     // Add a new lp to the pool. Can only be called by the owner.
-    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, uint16 _dynamicDepositFeeBP, uint256 _lpPriceMA7, uint256 _harvestInterval, uint256 _withdrawalFeeInterval, uint256 _withdrawalFeeBP, bool _withUpdate) public onlyOwner nonDuplicated(_lpToken) {
+    function add(uint256 _allocPoint, IBEP20 _lpToken, uint16 _depositFeeBP, uint256 _dynamicDepositFeeBP, uint256 _lpPriceMA7, uint256 _harvestInterval, uint256 _withdrawalFeeInterval, uint256 _withdrawalFeeBP, bool _withUpdate) public onlyOwner nonDuplicated(_lpToken) {
         // deposit fee can't excess more than 10%
         require(_depositFeeBP <= MAXIMUM_DEPOSIT_FEE, "add: invalid deposit fee basis points");
         // dynamic deposit fee can't excess more than 10%
@@ -229,6 +225,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
             depositFeeBP: _depositFeeBP,
             dynamicDepositFeeBP: _dynamicDepositFeeBP,
             lpPriceMA7: _lpPriceMA7,
+            totalBuybackBurnDepFee: 0,
             harvestInterval: _harvestInterval,
             withdrawalFeeInterval: _withdrawalFeeInterval,
             withdrawalFeeBP: _withdrawalFeeBP
@@ -332,28 +329,31 @@ contract MasterChef is Ownable, ReentrancyGuard {
         // Dynamic deposit fee are only applied if deposit fee are set > 0
         // dynamic fee type
         if (_amount > 0 && _lyptusFee==true && pool.dynamicDepositFeeBP>0 && pool.depositFeeBP > 0) {
-            // A Type Fee : Fee is payed in LYPTUS token
+            // A Type Fee : part of the fee is payed in LYPTUS token
             
             require(lyptusPriceMA7 > 0, "lyptus price not valid");
             require(pool.lpPriceMA7 > 0, "lp price not valid");
-            require(lyptuDiscountFeeBP > 0, "lyptuDiscountFeeBP not valid");
+            require(lyptusDiscountFeeBP > 0, "lyptuDiscountFeeBP not valid");
             
             uint256 lyptusAmount = 0;
-            uint16 lyptusFeeBP =  pool.dynamicDepositFeeBP * lyptuDiscountFeeBP / 10000;
-            uint16 remainningFeeBP = pool.dynamicDepositFeeBP - lyptusFeeBP;
+            uint256 lyptusFee =  pool.dynamicDepositFeeBP.mul(lyptusDiscountFeeBP).div(10000);
+            uint256 remainningFeeBP = pool.dynamicDepositFeeBP - lyptusFee;
 
             uint256 amountMulByPrice = _amount.mul(pool.lpPriceMA7);
-            lyptusAmount = ((amountMulByPrice.mul(lyptusFeeBP).div(10000)).mul(1e18)).div(lyptusPriceMA7);
-                
+            lyptusAmount = ((amountMulByPrice.mul(lyptusFee).div(10000)).mul(1e18)).div(lyptusPriceMA7);
+            
+            // The fee payed in LYPTUS is burned
             lyptus.transferFrom(msg.sender,BURN_ADDRESS,lyptusAmount);
             dynamicDepositFee = _amount.mul(remainningFeeBP).div(10000);
         }    
         else if (_amount > 0 && _lyptusFee==false && pool.dynamicDepositFeeBP>0 && pool.depositFeeBP > 0) {
-            // B Type Fee : Fee is payed in deposit token
+            // B Type Fee : all fee is payed in deposit token
 
             dynamicDepositFee = _amount.mul(pool.dynamicDepositFeeBP).div(10000);
+            // The part which is not payed in LYPTUS will serve for buyback and burn LYPTUS
+            uint256 buybackBurnDepFee = dynamicDepositFee.mul(lyptusDiscountFeeBP).div(10000);
+            pool.totalBuybackBurnDepFee = pool.totalBuybackBurnDepFee.add(buybackBurnDepFee);
         }
-         
         
         updatePool(_pid);
         
@@ -415,7 +415,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
         pool.lpToken.safeTransfer(address(msg.sender), amount);
         emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
-
 
     // Pay or lockup pending NALISs.
     function payOrLockupPendingNalis(uint256 _pid, bool _isWithdrawal) internal {
@@ -553,16 +552,15 @@ contract MasterChef is Ownable, ReentrancyGuard {
         require(_charityFeeBP <= 5000, "setCharityFeeRate: invalid charity fee rate basis points");
         emit CharityFeeRateUpdated(msg.sender, charityFeeBP, _charityFeeBP);
         charityFeeBP = _charityFeeBP;
-    }    
-    
+    }
     
     // Update lyptus discount fee rate by the owner
-    function setLyptusDiscountFeeRate(uint16 _lyptuDiscountFeeBP) public onlyOwner {
+    function setLyptusDiscountFeeRate(uint16 _lyptusDiscountFeeBP) public onlyOwner {
         // Max lyptus discount fee rate: 50%
         // lyptus discount fee is a part of dynamic deposit fee and not added fee
-        require(_lyptuDiscountFeeBP <= 5000, "setLyptusDiscountFeeRate: invalid lyptus discount fee rate basis points");
-        emit LyptusDiscountFeeRateUpdated(msg.sender, lyptuDiscountFeeBP, _lyptuDiscountFeeBP);
-        lyptuDiscountFeeBP = _lyptuDiscountFeeBP;
+        require(_lyptusDiscountFeeBP <= 5000, "setLyptusDiscountFeeRate: invalid lyptus discount fee rate basis points");
+        emit LyptusDiscountFeeRateUpdated(msg.sender, lyptusDiscountFeeBP, _lyptusDiscountFeeBP);
+        lyptusDiscountFeeBP = _lyptusDiscountFeeBP;
     }        
 
     // Update the nalis locker contract address by the owner
@@ -577,8 +575,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         require(_lockerRate <= 5000, "setLockerRate: invalid locker rate basis points");
         emit LockerRateUpdated(msg.sender, lockerRate, _lockerRate);
         lockerRate = _lockerRate;
-    }     
-    
+    }
 
     // Pay referral commission to the referrer who referred this user.
     function payReferralCommission(address _user, uint256 _pending) internal {
@@ -606,7 +603,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
         _operator = newOperator;
     }
     
-    
     // Update the lyptus MA 7 price. Can only be called by the current operator.
     function updateLyptusPriceMA7(uint256 _lyptusPriceMA7) public onlyOperator {
         require(_lyptusPriceMA7 > 0, "updateLyptusPriceMA7: value must be higher then 0");
@@ -619,5 +615,11 @@ contract MasterChef is Ownable, ReentrancyGuard {
         require(_lpPriceMA7 > 0, "updateLpPriceMA7: value must be higher then 0");
         emit LpPriceMA7Updated(msg.sender, poolInfo[_pid].lpPriceMA7, _lpPriceMA7);
         poolInfo[_pid].lpPriceMA7 = _lpPriceMA7;
-    }    
+    }   
+    
+    // Reset amount of totalBuybackBurnDepFee per pool. Can only be called by the current operator.
+    function resetTotalBuybackBurnDepFee(uint256 _pid) public onlyOperator {
+        emit TotalBuybackBurnDepFeeReseted(msg.sender, poolInfo[_pid].totalBuybackBurnDepFee, 0);
+        poolInfo[_pid].totalBuybackBurnDepFee = 0;
+    }      
 }
