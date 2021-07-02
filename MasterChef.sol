@@ -281,6 +281,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
     }
     
     // View function to see if user withdrawal fees apply to the harvest
+    // return true if time is over
     function noWithdrawFee(uint256 _pid, address _user) public view returns (bool) {
         UserInfo storage user = userInfo[_pid][_user];
         return block.timestamp >= user.noWithdrawalFeeAfter;
@@ -432,14 +433,16 @@ contract MasterChef is Ownable, ReentrancyGuard {
         // pending reward for user
         uint256 pending = user.amount.mul(pool.accNalisPerShare).div(1e12).sub(user.rewardDebt);
         
-        if (_isWithdrawal && noWithdrawFee(_pid, msg.sender)==false) {
-                // reset timer
-                user.noWithdrawalFeeAfter = block.timestamp.add(pool.withdrawalFeeInterval);
-                // if user withdrawal before the interval, user get X% less of pending reward
+        if (_isWithdrawal) {
+             // if user withdrawal before the interval, user get X% less of pending reward               
+            if (noWithdrawFee(_pid, msg.sender)==false) {
                 uint256 withdrawalfeeamount = pending.mul(pool.withdrawalFeeBP).div(10000);
                 pending = pending.sub(withdrawalfeeamount);
                 // tax on withdrawal is send to the burn address
-                safeNalisTransfer(BURN_ADDRESS, withdrawalfeeamount);                
+                safeNalisTransfer(BURN_ADDRESS, withdrawalfeeamount);     
+            }
+            // reset timer at each withdrawal
+            user.noWithdrawalFeeAfter = block.timestamp.add(pool.withdrawalFeeInterval);                
         }
         
         if (canHarvest(_pid, msg.sender)) {
