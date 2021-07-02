@@ -339,7 +339,6 @@ contract MasterChef is Ownable, ReentrancyGuard {
             
             uint256 lyptusAmount = 0;
             uint256 lyptusFee =  pool.dynamicDepositFeeBP.mul(lyptusDiscountFeeBP).div(10000);
-            uint256 remainningFeeBP = pool.dynamicDepositFeeBP - lyptusFee;
 
             uint256 amountMulByPrice = _amount.mul(pool.lpPriceMA7);
             lyptusAmount = ((amountMulByPrice.mul(lyptusFee).div(10000)).mul(1e18)).div(lyptusPriceMA7);
@@ -348,7 +347,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
             emit BurnLyptus(msg.sender,BURN_ADDRESS, lyptusAmount);
             
             lyptus.transferFrom(msg.sender,BURN_ADDRESS,lyptusAmount);
-            dynamicDepositFee = _amount.mul(remainningFeeBP).div(10000);
+            dynamicDepositFee = 0;
         }    
         else if (_amount > 0 && _lyptusFee==false && pool.dynamicDepositFeeBP>0 && pool.depositFeeBP > 0) {
             // B Type Fee : all fee is payed in deposit token
