@@ -102,7 +102,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
     uint256 public constant MAXIMUM_DEPOSIT_FEE = 1000;
     // Max withdrawal fee : 10% (in basis point)
     uint256 public constant MAXIMUM_WITHDRAWAL_FEE = 1000;   
-    // Lottery mint rate : maximum 5% (in basis point) :  default rate is 0 and will be updated when lottery release
+    // Lottery mint rate : maximum 4% (in basis point) :  default rate is 0 and will be updated when lottery release
     uint16 public lotteryMintRate;
     // Burn address
     address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;  
@@ -314,7 +314,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         nalis.mint(BURN_ADDRESS, nalisReward.mul(20).div(1000));
         // Automatically mint some NALIS for the lottery pot
         if (address(lotteryAddress) != address(0) && lotteryMintRate > 0) {
-            nalis.mint(BURN_ADDRESS, nalisReward.mul(lotteryMintRate).div(10000));
+            nalis.mint(lotteryAddress, nalisReward.mul(lotteryMintRate).div(10000));
         }        
         nalis.mint(address(this), nalisReward);
         pool.accNalisPerShare = pool.accNalisPerShare.add(nalisReward.mul(1e12).div(lpSupply));
@@ -544,7 +544,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
     // Update lottery mint rate by the owner
     function setLotteryMintRate(uint16 _lotteryMintRate) public onlyOwner {
-        // Max lottery mint rate: 4%.
+        // Max lottery mint rate : 4%.
         require(_lotteryMintRate <= 400, "setLotteryMintRate: invalid lottery mint rate basis points");
         emit LotteryMintRateUpdated(msg.sender, lotteryMintRate, _lotteryMintRate);
         lotteryMintRate = _lotteryMintRate;
