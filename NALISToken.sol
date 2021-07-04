@@ -22,8 +22,9 @@ import "./BEP20.sol";
 // NalisToken with Governance.
 contract NalisToken is BEP20 {
     
-    // Burn tax rate in basis points. (defaut 1%, max 2%)
-    uint16 public burnRateTax = 100;
+    // Burn tax rate in basis points. (defaut 2%, max 2%)
+    // Voted by the community here https://snapshot.org/#/koaladefi.eth/proposal/QmcEFL2Pee5eaLgui4nbCVawR9i4vohchEAU4Sa5mPLKLS
+    uint16 public burnRateTax = 200;
     
     // Burn address
     address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
